@@ -175,6 +175,11 @@ class PlatoonEnv(gym.Env):
                     self._init_desired_distance(options["desired distance"])
                 else:
                     self._init_desired_distance(self.d_des[-1])
+            elif self.headway.lower() == "cth":
+                if "desired distance" in options:
+                    self._init_desired_time_headway(options["time headway"], options["desired distance"])
+                else:
+                    self._init_desired_time_headway(self.h[-1],self.d_des[-1])
         else:
             for v in self.vehs:
                 v.reset()

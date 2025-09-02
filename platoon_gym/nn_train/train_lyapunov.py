@@ -46,7 +46,7 @@ class DoubleIntLyapunovControllerTrainer:
         self,
         save_dir: str,
         guide_control: bool = True,
-        max_episodes: int = 1000,
+        max_episodes: int = 2,
         control_hidden_dimensions: List[int] = [8, 8],
         lyapunov_hidden_dimensions: List[int] = [8, 8],
         control_learning_rate: float = 1e-2,
@@ -56,6 +56,7 @@ class DoubleIntLyapunovControllerTrainer:
         control_lambdas: List[int] = [1e-1, 1e-2, 1e-2, 1e-3, 0, 1e-3, 1e-2],
         control_limit: float = 3.0,
         desired_distance: float = 5.0,
+        time_headway: float = 1.2,
         distance_safety_margin: float = 2.0,
         far_distance_margin: float = 3.0,
         num_vehicles_start: int = 1,
@@ -96,8 +97,9 @@ class DoubleIntLyapunovControllerTrainer:
         self.llams = torch.tensor(lyapunov_lambdas).float().to(device)
         self.clams = torch.tensor(control_lambdas).float().to(device)
         self.cl = control_limit
-        self.d_des = desired_distance
-        self.dsm = distance_safety_margin
+        self.d_des = desired_distance # d_des[i] = self.h*vehs[i].state[1]+ self.dsm
+        self.time_headway = time_headway
+        self.dsm = distance_safety_margin # desired safety margin in CTH
         self.fdm = far_distance_margin
         self.edw = error_decreasing_weight
         self.nvs = num_vehicles_start
@@ -147,12 +149,13 @@ class DoubleIntLyapunovControllerTrainer:
         if ("linux" not in sys.platform) and ("darwin" not in sys.platform):
             exit("Unsupported OS found: {}".format(sys.platform))
         self.env_args = {
-            "headway": "CDH",
+            #"headway": "CDH",
             "topology": "PF",
             "dt": self.dt,
             "plot size": plot_size,
             "render dpi": dpi,
             "reset time": reset_time,
+            "headway": "CTH"
         }
 
         # save algorithm data
@@ -183,7 +186,10 @@ class DoubleIntLyapunovControllerTrainer:
                 print(f"\nTraining for {n_vehs} vehicles...\n")
                 # initialize platooning environment
                 d_des_list = [0] + [self.d_des] * n_vehs
+                time_headway_list = [0]+[self.time_headway] * n_vehs
+                #d_des_list = [0] + [self.dsm]*n_vehs
                 self.env_args["desired distance"] = d_des_list
+                self.env_args["time headway"] = time_headway_list
                 self.error_bounds, self.max_error_bounds = self.update_error_bounds(
                     n_vehs, d_des_list
                 )
@@ -217,6 +223,15 @@ class DoubleIntLyapunovControllerTrainer:
                     vl = VirtualLeader(
                         self.vl_traj_type, self.vl_traj_args, velocity=v_init
                     )
+                    # True CTH-based desired distances
+                    d_des_list = [] # this is for the leader
+                    for i,veh in enumerate(vehs):
+                        if i == 0:
+                            d_des_i = time_headway_list[i]*veh.state[1]
+                        else:
+                            d_des_i = time_headway_list[i]*veh.state[1] + self.d_des
+                        d_des_list.append(d_des_i)
+                    self.env_args["desired distance"] = d_des_list
                     if env is None:
                         env = PlatoonEnv(vehs, vl, self.env_args, render_mode=self.rm)
                         obs, env_info = env.reset()
@@ -225,6 +240,7 @@ class DoubleIntLyapunovControllerTrainer:
                             "vehicles": vehs,
                             "virtual leader": vl,
                             "desired distance": self.d_des,
+                            "time headway": self.time_headway,
                         }
                         obs, env_info = env.reset(options=options)
                     veh_states = env_info["vehicle states"]
@@ -240,9 +256,20 @@ class DoubleIntLyapunovControllerTrainer:
                     while True:
                         env.render()
                         errs = []
+                        #bence burada tekrar d_des_list guncellenmeli ve print edip bakalim gercekten
+                        #veh_states kullanarak hiz ogren.
+                        d_des_step = []
+                        for i in range(n_vehs):
+                            if i == 0:
+                                d_des_x = time_headway_list[i] * veh_states[i][1] + 0 
+                            else:
+                                d_des_x = time_headway_list[i] * veh_states[i][1] + self.d_des
+                            d_des_step.append(d_des_x)
+                        self.env_args["desired distance"] = d_des_step
                         for i in range(len(obs)):
-                            err = [*(obs[i] - np.array([d_des_list[i], 0.0]))]
+                            err = [*(obs[i] - np.array([d_des_step[i], 0.0]))] #d_des_list-michael
                             errs.append(err)
+                            # err = [*(obs[i] - np.array([self.time_headway*vehs[i].state[1] + self.dsm, 0.0]))]
                         errs = torch.from_numpy(np.array(errs)).float().to(device)
                         actions = self.ctrl(errs).detach().cpu()
                         actions = actions.squeeze() if n_vehs > 1 else actions
@@ -287,6 +314,7 @@ class DoubleIntLyapunovControllerTrainer:
                         veh_states = copy.deepcopy(env_info["vehicle states"])
 
                     if (ep_num + 1) % self.cf == 0:
+                        #self.max_error_bounds = self.error_bounds.copy()
                         self.ploss, self.dloss, self.perr, self.derr = self.eval_lyap()
                         self.eval_eps.append(ep_num + 1)
                         self.pos_losses.append(self.ploss)
@@ -296,6 +324,8 @@ class DoubleIntLyapunovControllerTrainer:
                             best_lyap = copy.deepcopy(self.lyap)
                         min_ploss = min(min_ploss, self.ploss)
                         min_dloss = min(min_dloss, self.dloss)
+                        #Kaydetme neden tetiklenmediğini anlamak için eval_lyap() sonrası ploss/dloss’u mutlaka yazdır:
+                        #print(f"[verify] ep={ep_num+1} ploss={self.ploss:.3e} dloss={self.dloss:.3e}")
                         if self.ploss < 1e-5 and self.dloss < 3e-5:
                             if np.allclose(self.error_bounds, self.max_error_bounds):
                                 torch.save(best_ctrl.state_dict(), self.ctrl_file)
@@ -310,6 +340,12 @@ class DoubleIntLyapunovControllerTrainer:
                                     prev_error_bounds=self.error_bounds,
                                 )
                             )
+                        
+                        #added to save .pt models
+                        print('damla  == buradayim')
+                        torch.save(best_ctrl.state_dict(), self.ctrl_file)
+                        torch.save(best_lyap.state_dict(), self.lyap_file)
+                        self.save_loss_plot(n_vehs)
 
                     else:
                         self.ploss = None

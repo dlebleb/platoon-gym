@@ -18,7 +18,7 @@ scatter_size = 6
 plt.rcParams["font.family"] = "Times New Roman"
 
 if __name__ == "__main__":
-    save_dir = os.path.join(get_project_root(), "scripts", "iros_2024")
+    save_dir = os.path.join(get_project_root(), "scripts", "iros_2024", "data")
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     n_vehs = [2, 3]

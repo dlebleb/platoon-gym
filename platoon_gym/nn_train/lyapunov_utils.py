@@ -46,6 +46,12 @@ def initialize_vehicles(
     for i in range(1, N):
         p0 = vehs[-1].state[0] - d_des[i] - errs[i, 0]
         v0 = vehs[-1].state[1] - errs[i, 1]
+        # Bu araçlar arasında constant time headway hesaplaması
+        # delta[i]: minimum güvenlik mesafesi
+        # h[i]: time_headway parameter
+        # d_des[i]: vehs[i].state[1]*h[i]+delta[i]
+        # p0 = vehs[-1].state[0] - (vehs[i].state[1]*h[i]+delta[i]) - errs[i, 0]
+        # v0 = vehs[-1].state[1] - errs[i, 1]
         vehs.append(Vehicle(dyns[i], p0, v0))
     return vehs
 
