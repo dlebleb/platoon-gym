@@ -46,7 +46,7 @@ class DoubleIntLyapunovControllerTrainer:
         self,
         save_dir: str,
         guide_control: bool = True,
-        max_episodes: int = 2,
+        max_episodes: int = 1000,
         control_hidden_dimensions: List[int] = [8, 8],
         lyapunov_hidden_dimensions: List[int] = [8, 8],
         control_learning_rate: float = 1e-2,
@@ -185,9 +185,10 @@ class DoubleIntLyapunovControllerTrainer:
                 lyap_opt = torch.optim.SGD(self.lyap.parameters(), lr=self.llr)
                 print(f"\nTraining for {n_vehs} vehicles...\n")
                 # initialize platooning environment
-                d_des_list = [0] + [self.d_des] * n_vehs
-                time_headway_list = [0]+[self.time_headway] * n_vehs
+                d_des_list = [0] + [self.d_des] *(n_vehs-1)
+                time_headway_list = [0]+[self.time_headway] * (n_vehs-1)
                 #d_des_list = [0] + [self.dsm]*n_vehs
+                #(n_vehs-1) ekleyebilirm.
                 self.env_args["desired distance"] = d_des_list
                 self.env_args["time headway"] = time_headway_list
                 self.error_bounds, self.max_error_bounds = self.update_error_bounds(
@@ -231,7 +232,10 @@ class DoubleIntLyapunovControllerTrainer:
                         else:
                             d_des_i = time_headway_list[i]*veh.state[1] + self.d_des
                         d_des_list.append(d_des_i)
-                    self.env_args["desired distance"] = d_des_list
+                    #self.env_args["desired distance"] = d_des_list
+                    #bence bunu sadece bir kez gondermem lazim-onu ilk basta yanlis dusundum.
+                    vehs = initialize_vehicles(n_vehs, dyns, d_des_list, v_init, errs)
+
                     if env is None:
                         env = PlatoonEnv(vehs, vl, self.env_args, render_mode=self.rm)
                         obs, env_info = env.reset()
@@ -265,7 +269,8 @@ class DoubleIntLyapunovControllerTrainer:
                             else:
                                 d_des_x = time_headway_list[i] * veh_states[i][1] + self.d_des
                             d_des_step.append(d_des_x)
-                        self.env_args["desired distance"] = d_des_step
+                        #self.env_args["desired distance"] = d_des_step
+                        #bence dedigim gibi buna 
                         for i in range(len(obs)):
                             err = [*(obs[i] - np.array([d_des_step[i], 0.0]))] #d_des_list-michael
                             errs.append(err)

@@ -179,7 +179,7 @@ class PlatoonEnv(gym.Env):
                 if "desired distance" in options:
                     self._init_desired_time_headway(options["time headway"], options["desired distance"])
                 else:
-                    self._init_desired_time_headway(self.h[-1],self.d_des[-1])
+                    self._init_desired_time_headway(self.time_headway[-1],self.d_des[-1]) #self.h diye bisi yok, time_headway olmasi gerekiyor.
         else:
             for v in self.vehs:
                 v.reset()
@@ -517,10 +517,11 @@ class PlatoonEnv(gym.Env):
                 position_error = distance - self.d_des[i]
             elif self.headway.lower() == "cth":
                 position_error = (
-                    distance - self.time_headway[i] * self.vehs[i].output[1]
+                    distance - (self.time_headway[i] * self.vehs[i].output[1] + self.d_des[i])
                 )
             error = np.array([position_error, velocity_error])
             close = (np.abs(error) < self.reset_thresh).all()
             if not close:
                 return False
         return True
+#bu fonksiyonda michael'in eksik yaptigini dusunuyorum, self.d_des[i] ekledim.
