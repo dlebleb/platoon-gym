@@ -60,7 +60,7 @@ class DoubleIntLyapunovControllerTrainer:
         distance_safety_margin: float = 2.0,
         far_distance_margin: float = 3.0,
         num_vehicles_start: int = 1,
-        num_vehicles_end: int = 30, # michael: 3
+        num_vehicles_end: int = 10, # michael: 3
         error_bounds_lower: float = 0.1,
         error_bounds_upper: float = 2.0,
         leader_speed_error_lower: float = 0.1,
